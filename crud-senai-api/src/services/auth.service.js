@@ -78,8 +78,7 @@ await pool.execute(
       return { ok: false, statusCode: 423, message: "3 tentativas incorretas. Usuário bloqueado." }; 
     } 
  
-    // Se ainda não atingiu o máximo, apenas incrementa o contador de tentativas 
-falhadas 
+    // Se ainda não atingiu o máximo, apenas incrementa o contador de tentativas falhadas 
     await pool.execute( 
       `UPDATE users SET failed_attempts = ? WHERE id = ?`, 
       [newFails, user.id] 
