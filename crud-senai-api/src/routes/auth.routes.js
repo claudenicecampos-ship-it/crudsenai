@@ -1,3 +1,4 @@
+import {requireAuth} from "../middlewares/auth.middleware.js";
 // Importa a função Router do framework Express, utilizada para criar rotas modulares 
 import { Router } from "express"; 
 // Importa o middleware express-rate-limit, que limita o número de requisições de um IP 
@@ -6,6 +7,10 @@ import rateLimit from "express-rate-limit";
 import { loginSchema } from "../validators/auth.validators.js"; 
 // Importa a função de serviço que executa a lógica de login com proteção de tentativas (lock) 
 import { loginWithLock } from "../services/auth.service.js"; 
+
+import { forgotPasswordSchema, resetPasswordSchema } from 
+"../validators/password-reset.validators.js"; 
+import { requestPasswordReset, resetPassword } from "../services/password-reset.service.js"; 
 // Cria uma nova instância de router para definir as rotas de autenticação 
 const router = Router(); 
 // Configura um middleware limitador de taxa (rate limiter) para proteger contra força bruta 
@@ -22,6 +27,8 @@ legacyHeaders: false
 // Define uma rota POST /login que recebe o middleware rate limiter como proteção 
 // A função é assíncrona (async) para permitir operações que esperam por promessas 
 router.post("/login", loginLimiter, async (req, res, next) => { 
+
+    
 // Inicia um bloco try-catch para capturar e tratar erros 
 try { 
 // Valida os dados do corpo da requisição usando o schema loginSchema do Zod 
@@ -47,7 +54,60 @@ return res.status(200).json(result.data);
 // O 'next(err)' chama o middleware de erro global definido na aplicação 
 next(err); 
 } 
+});
+
+router.post("/forgot-password", async (req, res, next) => { 
+  try { 
+    const parsed = forgotPasswordSchema.safeParse(req.body); 
+ 
+    if (!parsed.success) { 
+      return res.status(400).json({ 
+        message: "Dados inválidos.", 
+        details: parsed.error.issues.map(i => ({ 
+          field: i.path.join("."), 
+          message: i.message 
+        })) 
+      }); 
+    } 
+ 
+    const result = await requestPasswordReset(parsed.data.email); 
+ 
+    return res.status(result.statusCode).json(result.data); 
+  } catch (err) { 
+    next(err); 
+  } 
+});
+    router.post("/reset-password", async (req, res, next) => { 
+  try { 
+    const parsed = resetPasswordSchema.safeParse(req.body); 
+ 
+    if (!parsed.success) { 
+      return res.status(400).json({ 
+        message: "Dados inválidos.", 
+        details: parsed.error.issues.map(i => ({ 
+field: i.path.join("."), 
+message: i.message 
+})) 
 }); 
+} 
+const result = await resetPassword(parsed.data.token, parsed.data.newPassword); 
+if (!result.ok) { 
+return res.status(result.statusCode).json({ message: result.message }); 
+} 
+return res.status(result.statusCode).json(result.data); 
+} catch (err) { 
+next(err); 
+} 
+});
+
+//>>>ALTERADO: rota protegida para validar token (novo) passo 29.2 da apostila
+router.get("/me", requireAuth, async (req, res) => {
+    return res.json({
+        ok: true,
+        auth: req.auth
+    });
+});
+
 // Exporta o router como padrão (default export) para ser usado em outros arquivos 
 // OBRIGATÓRIO para que as rotas sejam acessíveis fora deste módulo 
 export default router;
