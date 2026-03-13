@@ -1,54 +1,7 @@
 // Importa a função para fazer requisições à API
-import { apiRequest } from "./api.js";
+import { apiRequest, setToken } from "./api.js";
 // Importa funções utilitárias (DOM, alertas, validação)
 import { $, showAlert, hideAlert, validateEmail } from "./utils.js";
-
-// Define o número máximo de tentativas de login antes de bloquear a conta
-const MAX_TRIES = 3;
-
-/**
- * Recupera o estado de tentativas de login de um usuário do localStorage
- * Armazena: quantidade de tentativas e até quando a conta está bloqueada
- * 
- * @param {string} email - Email do usuário
- * @returns {object} Objeto com { count: número de tentativas, lockedUntil: timestamp }
- */
-function getTryState(email) {
-  // Tenta buscar o estado guardado, ou cria um novo se não existir
-  const raw = localStorage.getItem(`tries:${email}`);
-  return raw ? JSON.parse(raw) : { count: 0, lockedUntil: 0 };
-}
-
-/**
- * Salva o estado de tentativas no localStorage
- * 
- * @param {string} email - Email do usuário
- * @param {object} state - Estado com count e lockedUntil
- */
-function setTryState(email, state) {
-  localStorage.setItem(`tries:${email}`, JSON.stringify(state));
-}
-
-/**
- * Verifica se a conta está bloqueada por tempo limite
- * 
- * @param {object} state - Estado com informação de bloqueio
- * @returns {boolean} true se ainda está bloqueado, false se pode tentar novamente
- */
-function isLocked(state) {
-  return Date.now() < (state.lockedUntil || 0);
-}
-
-/**
- * Bloqueia a conta por 5 minutos após máximo de tentativas
- * 
- * @param {object} state - Estado a ser modificado
- * @returns {object} Estado atualizado com novo tempo de bloqueio
- */
-function lockFor5Minutes(state) {
-  state.lockedUntil = Date.now() + 5 * 60 * 1000;  // 5 minutos em milissegundos
-  return state;
-}
 
 /**
  * Inicializa a página de login
@@ -67,8 +20,8 @@ export function initLoginPage() {
 
   // Configura o handler para quando o formulário é submetido
   form.addEventListener("submit", async (e) => {
-    e.preventDefault();  // Previne o comportamento padrão de reload da página
-    hideAlert(alertEl);  // Limpa alertas anteriores
+    e.preventDefault(); // Previne o comportamento padrão de reload da página
+    hideAlert(alertEl); // Limpa alertas anteriores
 
     // Captura e normaliza os valores do formulário
     const email = emailEl.value.trim().toLowerCase();
@@ -79,29 +32,16 @@ export function initLoginPage() {
       return showAlert(alertEl, "warn", "Informe um e-mail válido.");
     }
 
-    // Recupera o estado de tentativas deste email
-    let state = getTryState(email);
-
-    // Se a conta está bloqueada, calcula quanto tempo falta para desbloquear
-    if (isLocked(state)) {
-      const mins = Math.ceil((state.lockedUntil - Date.now()) / 60000);
-      return showAlert(alertEl, "err", `Usuário bloqueado temporariamente. Tente novamente em ~${mins} min.`);
-    }
-
     try {
       // IMPORTANTE: Quando o backend estiver pronto, descomente a linha abaixo:
-      const data = await apiRequest("/api/auth/login", { 
-        method: "POST", 
-        body: { email, password }, 
-        auth: false });
+      const data = await apiRequest("/api/auth/login", {
+        method: "POST",
+        body: { email, password },
+        auth: false,
+      });
 
-      // Para fins educacionais, simulamos o login localmente
-      // A senha correta é "123456" para demonstração
-      if (password !== "123456") throw new Error("Credenciais inválidas (simulação). Use senha 123456.");
-
-      // Simula a geração de um token (o real virá do backend)
-      const fakeToken = "FAKE_TOKEN_DEMO";
-      localStorage.setItem("token", data.token);
+      //Salva token e (opcional) o usuário
+      setToken(data.token);
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
 
       // Reseta o contador de tentativas após login bem-sucedido
@@ -112,19 +52,22 @@ export function initLoginPage() {
       showAlert(alertEl, "ok", "Login realizado! Redirecionando…");
       setTimeout(() => (window.location.href = "./users.html"), 700);
     } catch (err) {
-      // Incrementa o contador de tentativas após erro
-      state.count += 1;
-
       // Se atingiu o máximo de tentativas, bloqueia a conta por 5 minutos
-      if (state.count >= MAX_TRIES) {
-        state = lockFor5Minutes(state);
-        setTryState(email, state);
-        return showAlert(alertEl, "err", "3 tentativas incorretas. Usuário bloqueado por 5 minutos (simulação).");
+      if (err.status === 401) {
+        return showAlert(alertEl, "err", "E-mail ou senha incorretos.");
       }
 
-      // Salva o novo estado e mostra mensagem de erro com tentativas restantes
-      setTryState(email, state);
-      showAlert(alertEl, "err", `${err.message} Tentativas: ${state.count}/${MAX_TRIES}`);
+      if (err.status === 423) {
+        returnshowAlert(
+          alertE1,
+          "err",
+          "Usuário bloqueado temporariamente. Aguarde alguns minnutos e tente novamente.",
+        );
+      }
+
+      // Falback (erros não previstos)
+
+      showAlert(alertEl, "err", err.message || "Falha ao autenticar.");
     }
   });
 
@@ -135,17 +78,34 @@ export function initLoginPage() {
 
     // Valida o email antes de enviar
     if (!validateEmail(email)) {
-      return showAlert(alertEl, "warn", "Para redefinir, informe um e-mail válido no campo e-mail.");
+      return showAlert(
+        alertEl,
+        "warn",
+        "Para redefinir, informe um e-mail válido no campo e-mail.",
+      );
     }
 
     try {
-      // IMPORTANTE: Quando o backend estiver pronto, descomente:
-      // await apiRequest("/api/auth/forgot-password", { method: "POST", body: { email }, auth: false });
-
-      // Para aula, apenas simula o comportamento
-      showAlert(alertEl, "ok", "Se este e-mail existir, enviaremos um link/código de redefinição (simulação).");
+      const data = await apiRequest("/api/auth/forgot-password", {
+        method: "POST",
+        body: { email },
+        auth: false,
+      });
+      // Em ambiente didático, exibimos o token no alerta para teste.
+       const tokenInfo = data.token ? ` Token: ${data.token}` : "";
+       showAlert(alertEl, "ok", `${data.message}${tokenInfo}`);
     } catch (err) {
-      showAlert(alertEl, "err", err.message);
+      console.log(
+        "DEBUG ERRO FORGOT PASSWORD:",
+        err.message,
+        err.status,
+        err.data,
+      );
+      showAlert(
+        alertEl,
+        "err",
+        err.message || "Falha ao solicitar redefinição de senha.",
+      );
     }
   });
 }

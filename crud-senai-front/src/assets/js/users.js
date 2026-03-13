@@ -1,3 +1,8 @@
+function getLoggedUser() {
+  const raw = localStorage.getItem("user");
+  return raw ? JSON.parse(raw) : null;
+}
+
 // Importa a função para fazer requisições à API
 import { apiRequest } from "./api.js";
 // Importa funções utilitárias (DOM, alertas, validação)
@@ -13,18 +18,18 @@ import { $, setText, showAlert, hideAlert, validateEmail } from "./utils.js";
  * Simula uma busca em banco de dados
  * @returns {Array} Lista de usuários ou array vazio se não existir
  */
-function loadUsers() {
-  return JSON.parse(localStorage.getItem("demoUsers") || "[]");
-}
+//function loadUsers() {
+//  return JSON.parse(localStorage.getItem("demoUsers") || "[]");
+//}
 
 /**
  * Salva a lista de usuários no localStorage
  * Simula uma gravação em banco de dados
  * @param {Array} users - Lista de usuários a ser salva
  */
-function saveUsers(users) {
-  localStorage.setItem("demoUsers", JSON.stringify(users));
-}
+//function saveUsers(users) {
+// localStorage.setItem("demoUsers", JSON.stringify(users));
+//}
 // ============================================================
 // FUNÇÕES DE RENDERIZAÇÃO (UI)
 // Responsáveis por atualizar a tabela de usuários na página
@@ -32,48 +37,56 @@ function saveUsers(users) {
 
 /**
  * Renderiza a lista de usuários na tabela HTML
- * 
+ *
  * @param {Array} users - Lista de usuários a exibir
  */
+
+async function loadUsersFromApi(alertEl) {
+  const list = await apiRequest("/api/users");
+  usersCache = list;
+  render(usersCache);
+}
+
 function render(users) {
   const tbody = $("#usersTbody");
   // Limpa a tabela antes de recarregar
   tbody.innerHTML = "";
 
-  // Itera sobre cada usuário da lista
-  users.forEach((u) => {
-    const tr = document.createElement("tr");  // Cria uma nova linha de tabela
+  const loggedUser = getLoggedUser();
+  if (loggedUser && loggedUser.profile === "ADMIN") {
+    const btnEdit = document.createElement("button");
+    btnEdit.className = "btn-ghost";
+    btnEdit.type = "button";
+    btnEdit.textContent = "Editar";
+    btnEdit.addEventListener("click", () => fillForm(u));
+    const btnToggle = document.createElement("button");
+    btnToggle.className = "btn-danger";
+    btnToggle.type = "button";
+    btnToggle.textContent = u.status === "ACTIVE" ? "Inativar" : "Ativar";
+    btnToggle.addEventListener("click", () =>
+      toggleStatus(u.id, u.status, $("#alertUsers")),
+    );
+    tdActions.appendChild(btnEdit);
+    tdActions.appendChild(btnToggle);
+  }
 
-    // Cria um badge (rótulo) com o status (ATIVO ou INATIVO)
-    const statusBadge = document.createElement("span");
-    statusBadge.className = `badge ${u.active ? "active" : "inactive"}`;
-    statusBadge.textContent = u.active ? "ATIVO" : "INATIVO";
+  // PROTEÇÃO CONTRA XSS: Usamos textContent ao invés de innerHTML para textos
+  // Isso previne que dados maliciosos (script) sejam executados
+  const tds = tr.querySelectorAll("td");
+  setText(tds[0], u.name); // Adiciona o nome do usuário
+  setText(tds[1], u.email); // Adiciona o email do usuário
+  tds[2].appendChild(statusBadge); // Adiciona o badge de status
 
-    // Monta a estrutura HTML da linha com botões de ação
-    tr.innerHTML = `
-      <td></td>
-      <td></td>
-      <td></td>
-      <td>
-        <button class="btn-ghost" data-action="edit">Editar</button>
-        <button class="btn-danger" data-action="toggle">${u.active ? "Inativar" : "Ativar"}</button>
-      </td>
-    `;
+  // Configura os listeners dos botões de editar e ativar/inativar
+  tr.querySelector('[data-action="edit"]').addEventListener("click", () =>
+    fillForm(u),
+  );
+  tr.querySelector('[data-action="toggle"]').addEventListener("click", () =>
+    toggleStatus(u.id),
+  );
 
-    // PROTEÇÃO CONTRA XSS: Usamos textContent ao invés de innerHTML para textos
-    // Isso previne que dados maliciosos (script) sejam executados
-    const tds = tr.querySelectorAll("td");
-    setText(tds[0], u.name);      // Adiciona o nome do usuário
-    setText(tds[1], u.email);     // Adiciona o email do usuário
-    tds[2].appendChild(statusBadge);  // Adiciona o badge de status
-
-    // Configura os listeners dos botões de editar e ativar/inativar
-    tr.querySelector('[data-action="edit"]').addEventListener("click", () => fillForm(u));
-    tr.querySelector('[data-action="toggle"]').addEventListener("click", () => toggleStatus(u.id));
-
-    // Adiciona a linha à tabela
-    tbody.appendChild(tr);
-  });
+  // Adiciona a linha à tabela
+  tbody.appendChild(tr);
 }
 
 // ============================================================
@@ -83,7 +96,7 @@ function render(users) {
 /**
  * Preenche o formulário com os dados de um usuário
  * Usado quando o usuário clica em "Editar"
- * 
+ *
  * @param {object} user - Objeto do usuário com dados
  */
 function fillForm(user) {
@@ -92,7 +105,7 @@ function fillForm(user) {
   $("#email").value = user.email;
   $("#profile").value = user.profile;
   $("#active").value = user.active ? "1" : "0";
-  $("#password").value = "";  // Limpa o campo de senha
+  $("#password").value = ""; // Limpa o campo de senha
   $("#password").placeholder = "Deixe em branco para manter a senha";
 }
 
@@ -113,19 +126,17 @@ function clearForm() {
 /**
  * Alterna o status de um usuário (ATIVO <-> INATIVO)
  * Simula uma operação UPDATE no banco de dados
- * 
+ *
  * @param {string} id - ID do usuário
  */
 function toggleStatus(id) {
-  const users = loadUsers();  // Carrega lista completa
-  const idx = users.findIndex((u) => u.id === id);  // Encontra o usuário
-  if (idx === -1) return;  // Se não encontrar, retorna
-  users[idx].active = !users[idx].active;  // Inverte o status
-  saveUsers(users);  // Salva a mudança
-  render(users);  // Atualiza a exibição
+  // const users = loadUsers();  // Carrega lista completa
+  const idx = users.findIndex((u) => u.id === id); // Encontra o usuário
+  if (idx === -1) return; // Se não encontrar, retorna
+  users[idx].active = !users[idx].active; // Inverte o status
+  // saveUsers(users);  // Salva a mudança
+  render(users); // Atualiza a exibição
 }
-
-
 
 // ============================================================
 // FUNÇÃO PRINCIPAL - Inicializa a página de usuários
@@ -138,6 +149,10 @@ function toggleStatus(id) {
 export function initUsersPage() {
   // Captura os elementos HTML da página
   const form = $("#userForm");
+  const loggedUser = getLoggedUser();
+  if (!loggedUser || loggedUser.profile !== "ADMIN") {
+    form.style.display = "none";
+  }
   const alertEl = $("#alertUsers");
   const logoutBtn = $("#logoutBtn");
   const searchEl = $("#search");
@@ -147,27 +162,33 @@ export function initUsersPage() {
 
   // ===== CARREGAMENTO INICIAL =====
   // Carrega e exibe a lista de usuários armazenada
-  const users = loadUsers();
-  render(users);
+  //const users = loadUsers();
+  //render(users);
 
   // ===== HANDLER: Formulário de Criar/Editar Usuário =====
   form.addEventListener("submit", async (e) => {
-    e.preventDefault();  // Previne reload
-    hideAlert(alertEl);  // Limpa alertas anteriores
+    e.preventDefault(); // Previne reload
+    hideAlert(alertEl); // Limpa alertas anteriores
 
     // Captura os valores do formulário
-    const id = $("#userId").value || crypto.randomUUID();  // Gera ID se novo usuário
+    //const id = $("#userId").value || crypto.randomUUID();  // Gera ID se novo usuário
     const name = $("#name").value.trim();
     const email = $("#email").value.trim().toLowerCase();
-    const profile = $("#profile").value;  // ADMIN ou USER
-    const active = $("#active").value === "1";  // Converte para booleano
+    const profile = $("#profile").value; // ADMIN ou USER
+    const active = $("#active").value === "1"; // Converte para booleano
     const password = $("#password").value;
 
     // ===== VALIDAÇÕES =====
     // Valida o nome (mínimo 3 caracteres)
-    if (name.length < 3) return showAlert(alertEl, "warn", "Nome deve ter pelo menos 3 caracteres.");
+    if (name.length < 3)
+      return showAlert(
+        alertEl,
+        "warn",
+        "Nome deve ter pelo menos 3 caracteres.",
+      );
     // Valida o email (formato correto)
-    if (!validateEmail(email)) return showAlert(alertEl, "warn", "E-mail inválido.");
+    if (!validateEmail(email))
+      return showAlert(alertEl, "warn", "E-mail inválido.");
 
     try {
       // ===== INTEGRAÇÃO COM BACKEND (Comentada para educação) =====
@@ -176,13 +197,23 @@ export function initUsersPage() {
       // - UPDATE: PUT /api/users/:id
       // Obs: a senha será criptografada no backend (bcrypt), não aqui.
       //
-      // await apiRequest("/api/users", { 
-      //   method: "POST", 
-      //   body: { name, email, profile, active, password } 
-      // });
+      await apiRequest("/api/users", {
+        method: "POST",
+        body: { name, email, profile, active, password },
+      });
+
+      await apiRequest(`/api/users/${id}`, {
+        method: "PUT",
+        body: { name, email, profile, status },
+      });
+
+      await apiRequest(`/api/users/${id}/status`, {
+        method: "PATCH",
+        body: { status: "INACTIVE" },
+      });
 
       // ===== SIMULAÇÃO LOCAL (Para fins educacionais) =====
-      const list = loadUsers();
+      // const list = loadUsers();
       // Verifica se já existe outro usuário com este email
       const exists = list.find((u) => u.email === email && u.id !== id);
       if (exists) throw new Error("Já existe usuário com este e-mail.");
@@ -198,7 +229,7 @@ export function initUsersPage() {
       }
 
       // Salva a lista atualizada
-      saveUsers(list);
+      //saveUsers(list);
       // Recarrega a tabela
       render(list);
       // Limpa o formulário
@@ -207,7 +238,15 @@ export function initUsersPage() {
       showAlert(alertEl, "ok", "Usuário salvo com sucesso (simulação).");
     } catch (err) {
       // Se houve erro, mostra a mensagem
-      showAlert(alertEl, "err", err.message);
+      //showAlert(alertEl, "err", err.message);
+
+      if (err.status === 401 || err.status === 403) {
+        setToken(null);
+        window.location.href = "./login.html";
+      }
+      if (err.status === 409) {
+        showAlert(alertEl, "err", "Já existe usuário com este e-mail.");
+      }
     }
   });
 
@@ -223,10 +262,12 @@ export function initUsersPage() {
   // Filtra a lista conforme o usuário digita
   searchEl.addEventListener("input", () => {
     const term = searchEl.value.trim().toLowerCase();
-    const list = loadUsers();
+    // const list = loadUsers();
     // Filtra usuários que contêm o termo no nome OU no email
-    const filtered = list.filter((u) =>
-      u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term)
+    const filtered = list.filter(
+      (u) =>
+        u.name.toLowerCase().includes(term) ||
+        u.email.toLowerCase().includes(term),
     );
     // Renderiza apenas os usuários filtrados
     render(filtered);
@@ -234,8 +275,15 @@ export function initUsersPage() {
 
   // ===== HANDLER: Botão Sair (Logout) =====
   // Remove o token e redireciona para login
-  logoutBtn.addEventListener("click", () => {
-    localStorage.removeItem("token");  // Remove autenticação
-    window.location.href = "./login.html";  // Redireciona para login
+  llogoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "./login.html";
   });
+
+  const userInfo = $("#loggedUserInfo");
+  if (loggedUser) {
+    userInfo.textContent = `Logado como: ${loggedUser.name} 
+(${loggedUser.profile})`;
+  }
 }
